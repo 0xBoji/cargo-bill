@@ -33,23 +33,28 @@ sequenceDiagram
 
 `cargo-bill` is a cargo subcommand. You can run it effortlessly on any internal Rust API project.
 
-### 1. Build from Source
+### 1. Via Crates.io (Recommended)
+If you already have Rust installed, simply pull it from the official registry:
 ```bash
-git clone https://github.com/your-username/cargo-bill.git
-cd cargo-bill
-cargo install --path .
+cargo install cargo-bill
 ```
 
-### 2. Basic Estimation
+### 2. Via Bash Script (No Rust needed)
+If you just want the pre-compiled binary for macOS or Linux:
+```bash
+curl -sL https://raw.githubusercontent.com/0xBoji/cargo-bill/master/install.sh | bash
+```
+
+### 3. Basic Estimation
 Evaluate overhead for a standard x86 payload on `us-east-1` (defaults):
 ```bash
-cargo run -- bill lambda
+cargo-bill bill lambda
 ```
 
-### 3. Advanced FinOps Evaluation (Graviton)
+### 4. Advanced FinOps Evaluation (Graviton)
 Evaluate structural cost savings utilizing Amazon's proprietary ARM64 architecture in Frankfurt:
 ```bash
-cargo run -- bill lambda --architecture arm64 --region eu-central-1 --memory 128 --executions 1000000
+cargo-bill bill lambda --architecture arm64 --region eu-central-1 --memory 128 --executions 1000000
 ```
 
 **Example Output:**
