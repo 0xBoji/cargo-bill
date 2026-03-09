@@ -40,6 +40,18 @@ pub struct LambdaArgs {
     /// Architecture (x86_64 or arm64)
     #[arg(long, default_value = "x86_64")]
     pub architecture: String,
+
+    /// Output results in JSON format
+    #[arg(long)]
+    pub json: bool,
+
+    /// Include AWS Free Tier deductions (1M free requests & 400,000 GB-seconds)
+    #[arg(long)]
+    pub include_free_tier: bool,
+
+    /// Assume Provisioned Concurrency (Eliminates Cold Starts)
+    #[arg(long)]
+    pub provisioned_concurrency: bool,
 }
 
 pub fn parse_args() -> BillArgs {

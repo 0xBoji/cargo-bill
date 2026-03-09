@@ -6,23 +6,32 @@ mod pricing_provider;
 use anyhow::Result;
 use cli::{parse_args, BillSubcommands};
 use prettytable::{format, row, Table};
+use serde_json::json;
+use tracing::{info, warn};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = parse_args();
 
+    let BillSubcommands::Lambda(ref lambda_args) = args.command;
+    if !lambda_args.json {
+        tracing_subscriber::fmt::init();
+    }
+
     match args.command {
         BillSubcommands::Lambda(lambda_args) => {
-            println!("Initializing cargo-bill for AWS Lambda cost estimation...");
-            println!(
-                "Region: {}, Memory: {} MB, Executions: {}, Architecture: {}",
-                lambda_args.region,
-                lambda_args.memory,
-                lambda_args.executions,
-                lambda_args.architecture
-            );
+            if !lambda_args.json {
+                info!("Initializing cargo-bill for AWS Lambda cost estimation...");
+                info!(
+                    "Region: {}, Memory: {} MB, Executions: {}, Architecture: {}",
+                    lambda_args.region,
+                    lambda_args.memory,
+                    lambda_args.executions,
+                    lambda_args.architecture
+                );
+            }
 
-            let (binary_path, metadata) = builder::execute_build()?;
+            let (binary_path, metadata) = builder::execute_build(lambda_args.json)?;
 
             let analysis = analysis_engine::analyze_binary(&binary_path)?;
 
@@ -33,25 +42,46 @@ async fn main() -> Result<()> {
                 lambda_args.memory,
                 &lambda_args.region,
                 &lambda_args.architecture,
+                lambda_args.include_free_tier,
+                lambda_args.provisioned_concurrency,
             )
             .await;
 
-            if analysis.size_mb > 30.0 {
+            if analysis.size_mb > 30.0 && !lambda_args.json {
                 let has_heavy_deps = metadata.packages.iter().any(|p| p.name.contains("aws-sdk"));
                 if has_heavy_deps {
-                    println!(
-                        "\nWarning: Your binary is unusually large ({:.2} MB).",
+                    warn!(
+                        "Your binary is unusually large ({:.2} MB).",
                         analysis.size_mb
                     );
-                    println!("You are compiling aws-sdk crates (e.g., aws-sdk-s3 or aws-sdk-pricing) potentially with all features enabled.");
-                    println!("Consider using default-features = false to reduce Cold Start time.");
+                    warn!("You are compiling aws-sdk crates (e.g., aws-sdk-s3 or aws-sdk-pricing) potentially with all features enabled.");
+                    warn!("Consider using default-features = false to reduce Cold Start time.");
                 } else {
-                    println!(
-                        "\nWarning: Your binary is unusually large ({:.2} MB).",
+                    warn!(
+                        "Your binary is unusually large ({:.2} MB).",
                         analysis.size_mb
                     );
-                    println!("Consider optimizing your dependencies to reduce Cold Start time.");
+                    warn!("Consider optimizing your dependencies to reduce Cold Start time.");
                 }
+            }
+
+            if lambda_args.json {
+                let output = json!({
+                    "metadata": {
+                        "binary_size_mb": analysis.size_mb,
+                        "architecture": lambda_args.architecture,
+                        "stripped": analysis.is_stripped,
+                        "has_debug_symbols": analysis.has_debug_symbols,
+                        "executions": lambda_args.executions,
+                        "memory_mb": lambda_args.memory,
+                        "region": lambda_args.region,
+                        "include_free_tier": lambda_args.include_free_tier,
+                        "provisioned_concurrency": lambda_args.provisioned_concurrency
+                    },
+                    "estimation": costs
+                });
+                println!("{}", serde_json::to_string_pretty(&output)?);
+                return Ok(());
             }
 
             let mut table = Table::new();
@@ -89,7 +119,7 @@ async fn main() -> Result<()> {
                 }
             ]);
 
-            println!("\nAWS Lambda Cost Estimation Report:");
+            info!("\nAWS Lambda Cost Estimation Report:");
             table.printstd();
         }
     }

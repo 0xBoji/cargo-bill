@@ -9,6 +9,9 @@ use aws_sdk_pricing::types::FilterType;
 use aws_sdk_pricing::Client as PricingClient;
 use serde_json::Value;
 
+use serde::Serialize;
+
+#[derive(Serialize)]
 pub struct PricingEstimate {
     pub storage_cost_monthly: f64,
     pub compute_cost_1m: f64,
@@ -160,15 +163,29 @@ pub async fn calculate_costs(
     memory_mb: u32,
     region: &str,
     architecture: &str,
+    include_free_tier: bool,
+    provisioned_concurrency: bool,
 ) -> PricingEstimate {
     let size_gb = size_mb / 1024.0;
     let storage_cost_monthly = size_gb * S3_GB_MONTHLY;
 
-    let cold_start_ms = predict_cold_start(size_mb, memory_mb);
+    let mut cold_start_ms = predict_cold_start(size_mb, memory_mb);
+    if provisioned_concurrency {
+        cold_start_ms = 0.0;
+    }
+
     let baseline_duration_ms = 100.0;
 
     let mem_gb = memory_mb as f64 / 1024.0;
     let total_duration_seconds = (baseline_duration_ms + cold_start_ms) / 1000.0;
+
+    // AWS Lambda Free Tier provides 400,000 GB-seconds of compute time per month
+    let free_tier_gb_seconds = 400_000.0;
+    let mut total_gb_seconds = mem_gb * total_duration_seconds * (executions as f64);
+
+    if include_free_tier {
+        total_gb_seconds = (total_gb_seconds - free_tier_gb_seconds).max(0.0);
+    }
 
     // Try finding dynamic rate
     let (lambda_gb_second, dynamic_pricing_used) =
@@ -184,8 +201,7 @@ pub async fn calculate_costs(
             }
         };
 
-    let cost_per_execution = (mem_gb * total_duration_seconds) * lambda_gb_second;
-    let compute_cost_1m = cost_per_execution * (executions as f64);
+    let compute_cost_1m = total_gb_seconds * lambda_gb_second;
 
     PricingEstimate {
         storage_cost_monthly,
@@ -209,5 +225,30 @@ mod tests {
 
         // Binary rất nhỏ, bị chặn ở mức min 20ms
         assert_eq!(predict_cold_start(0.5, 1024), 20.0);
+    }
+
+    #[tokio::test]
+    async fn test_free_tier_and_provisioned_concurrency() {
+        let size_mb = 10.0;
+        let executions = 100_000;
+        let memory_mb = 128;
+        let region = "us-east-1";
+        let architecture = "x86_64";
+
+        let estimate = calculate_costs(
+            size_mb,
+            executions,
+            memory_mb,
+            region,
+            architecture,
+            true, // Include Free Tier
+            true, // Provisioned Concurrency
+        )
+        .await;
+
+        // 100k execs at 128MB is ~12.5GB-seconds, well under the 400k free tier limit
+        assert_eq!(estimate.compute_cost_1m, 0.0);
+        // Provisioned Concurrency eliminates Cold Start explicitly
+        assert_eq!(estimate.predicted_cold_start_ms, 0.0);
     }
 }

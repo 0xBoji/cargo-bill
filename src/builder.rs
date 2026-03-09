@@ -3,8 +3,12 @@ use std::env;
 use std::path::PathBuf;
 use std::process::Command;
 
-pub fn execute_build() -> Result<(PathBuf, cargo_metadata::Metadata)> {
-    println!("Executing `cargo build --release`...");
+use tracing::info;
+
+pub fn execute_build(mute_build_output: bool) -> Result<(PathBuf, cargo_metadata::Metadata)> {
+    if !mute_build_output {
+        info!("Executing `cargo build --release`...");
+    }
 
     let status = Command::new("cargo")
         .args(["build", "--release"])
