@@ -1,0 +1,18 @@
+[package]
+name = "cargo-bill"
+version = "0.1.0"
+edition = "2021"
+authors = ["0xboji"]
+description = "A Rust CLI tool that estimates AWS Lambda costs based on the compiled binary size."
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+tokio = { version = "1.37", features = ["full"] }
+object = "0.36"
+prettytable-rs = "^0.10"
+cargo_metadata = "0.18"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+aws-config = "1.8.15"
+aws-sdk-pricing = "1.99.0"
+anyhow = "1.0.102"
