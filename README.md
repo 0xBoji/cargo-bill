@@ -96,3 +96,15 @@ let cold_start_ms = (size_mb * 15.0) * memory_factor;
 
 A monolithic 30MB payload crammed into a cheap 128MB Lambda limits the CPU stream and balloons initialization times into multiple seconds. 
 `cargo-bill` dynamically reads your **Dependency Weight** alongside your Cargo Target, predicting this latency lag explicitly so your DevOps team can negotiate optimization triggers before hitting production limits.
+
+---
+
+## 🛠️ Troubleshooting
+
+**"Does this tool fail if I don't have AWS Credentials configured?"**
+
+No! `cargo-bill` is built with a resilient fallback mechanism. If the AWS Pricing SDK fails to locate valid credentials (e.g. `~/.aws/credentials` or standard Environment Variables like `AWS_ACCESS_KEY_ID`), or if the AWS pricing API times out, it will automatically degrade gracefully:
+
+- It bypasses the dynamic API fetch pipeline.
+- It immediately drops into **Static Pricing Fallback Mode** estimating compute costs using hardcoded base rates for common compute tiers (`$0.0000166667` for x86 / `$0.0000133334` for Graviton).
+- The generated table report will clearly display: `Dynamic API Pricing Used: No (Fallback)` so you always know the source of truth of your estimate.

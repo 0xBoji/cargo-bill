@@ -7,7 +7,11 @@ pub enum CargoCli {
 }
 
 #[derive(clap::Args, Debug)]
-#[command(author, version, about = "Estimates AWS Lambda costs based on the compiled binary size.")]
+#[command(
+    author,
+    version,
+    about = "Estimates AWS Lambda costs based on the compiled binary size."
+)]
 pub struct BillArgs {
     #[command(subcommand)]
     pub command: BillSubcommands,
