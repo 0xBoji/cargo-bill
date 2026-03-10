@@ -47,6 +47,14 @@ async fn main() -> Result<()> {
             )
             .await;
 
+            if std::env::consts::OS != "linux" && !lambda_args.json {
+                warn!(
+                    "You are building on '{}'. The binary size might differ slightly from the actual Amazon Linux (ELF) deployment.",
+                    std::env::consts::OS
+                );
+                warn!("For strict production accuracy, consider cross-compiling with 'cargo-lambda' or 'cross'.");
+            }
+
             if analysis.size_mb > 30.0 && !lambda_args.json {
                 let has_heavy_deps = metadata.packages.iter().any(|p| p.name.contains("aws-sdk"));
                 if has_heavy_deps {

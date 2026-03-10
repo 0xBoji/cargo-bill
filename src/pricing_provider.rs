@@ -1,6 +1,7 @@
 const S3_GB_MONTHLY: f64 = 0.10;
 const LAMBDA_GB_SECOND_X86: f64 = 0.0000166667;
 const LAMBDA_GB_SECOND_ARM64: f64 = 0.0000133334;
+const LAMBDA_REQUEST_PRICE_PER_1M: f64 = 0.20;
 
 use anyhow::{anyhow, Context, Result};
 
@@ -220,7 +221,14 @@ pub async fn calculate_costs(
             }
         };
 
-    let compute_cost_1m = total_gb_seconds * lambda_gb_second;
+    let mut billable_executions = executions as f64;
+    if include_free_tier {
+        billable_executions = (billable_executions - 1_000_000.0).max(0.0);
+    }
+    let request_cost = (billable_executions / 1_000_000.0) * LAMBDA_REQUEST_PRICE_PER_1M;
+
+    // Total Lambda cost = compute GB-seconds + request charges
+    let compute_cost_1m = (total_gb_seconds * lambda_gb_second) + request_cost;
 
     PricingEstimate {
         storage_cost_monthly,
@@ -269,5 +277,14 @@ mod tests {
         assert_eq!(estimate.compute_cost_1m, 0.0);
         // Provisioned Concurrency eliminates Cold Start explicitly
         assert_eq!(estimate.predicted_cold_start_ms, 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_request_charge_applies_after_free_tier() {
+        let estimate =
+            calculate_costs(10.0, 1_100_000, 128, "us-east-1", "x86_64", true, true).await;
+
+        // 1.1M requests with free tier => billable 100k => 0.1 * $0.20 = $0.02
+        assert!((estimate.compute_cost_1m - 0.02).abs() < 1e-9);
     }
 }
