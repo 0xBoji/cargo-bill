@@ -1,115 +1,129 @@
-# 🦅 cargo-bill
+# cargo-bill
 
-![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)
-![AWS](https://img.shields.io/badge/AWS-%23FF9900.svg?style=for-the-badge&logo=amazon-aws&logoColor=white)
-![FinOps](https://img.shields.io/badge/FinOps-00C7B7?style=for-the-badge&logo=cashapp&logoColor=white)
+[![Crates.io](https://img.shields.io/crates/v/cargo-bill.svg)](https://crates.io/crates/cargo-bill)
+[![Docs.rs](https://img.shields.io/docsrs/cargo-bill)](https://docs.rs/cargo-bill)
+[![CI](https://github.com/0xBoji/cargo-bill/actions/workflows/rust.yml/badge.svg)](https://github.com/0xBoji/cargo-bill/actions/workflows/rust.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-`cargo-bill` is a specialized FinOps and Platform Engineering CLI tool designed for Rust developers targeting **AWS Lambda**. By statically analyzing your compiled binary footprint and intelligently parsing your dependency tree, it provides predictive computing costs and mathematically sound Cold Start estimations before you even deploy.
+`cargo-bill` is a Cargo plugin that estimates AWS Lambda cost and cold-start impact from your compiled Rust binary.
+It is designed for platform and FinOps workflows where you want cost visibility before deployment.
 
----
+## What it does
 
-## 🏗️ Architecture Flow
+- Builds your project in release mode and analyzes binary footprint.
+- Estimates Lambda storage and execution cost.
+- Includes both Lambda cost components:
+  - Compute cost (GB-seconds)
+  - Request cost (`$0.20 / 1M requests`)
+- Supports optional AWS Free Tier deductions:
+  - `400,000 GB-seconds`
+  - `1,000,000 requests`
+- Fetches dynamic pricing via AWS Pricing API with fallback to static rates.
+- Predicts cold-start latency from binary size and memory configuration.
+- Outputs either table format or JSON for automation.
 
-```mermaid
-sequenceDiagram
-    participant User as 💻 Developer CLI
-    participant Builder as 📦 Cargo Build
-    participant Analyzer as 🔍 Binary Analyzer
-    participant AWS as ☁️ AWS Pricing API
-    participant Engine as 🧮 Estimation Engine
-    
-    User->>Builder: `cargo bill lambda`
-    Builder-->>Analyzer: 1. Compiles & returns target Path
-    Analyzer-->>Analyzer: 2. Parses Metadata & Debug Symbols
-    Analyzer-->>Engine: 3. Streams `size_mb` and flags
-    Engine->>AWS: 4. Async fetch live pricing (us-east-1 routing)
-    AWS-->>Engine: 5. Returns dynamic region/arch compute rates
-    Engine-->>User: 6. Computes FinOps Cost Report Data
-```
+## Installation
 
----
+### From crates.io
 
-## 🚀 Installation & Usage
-
-`cargo-bill` is a cargo subcommand. You can run it effortlessly on any internal Rust API project.
-
-### 1. Via Crates.io (Recommended)
-If you already have Rust installed, simply pull it from the official registry:
 ```bash
 cargo install cargo-bill
 ```
 
-### 2. Via Bash Script (No Rust needed)
-If you just want the pre-compiled binary for macOS or Linux:
+### From install script
+
 ```bash
 curl -sL https://raw.githubusercontent.com/0xBoji/cargo-bill/master/install.sh | bash
 ```
 
-### 3. Basic Estimation
-Evaluate overhead for a standard x86 payload on `us-east-1` (defaults):
+## Quick start
+
+As a Cargo plugin:
+
+```bash
+cargo bill lambda
+```
+
+Equivalent binary invocation:
+
 ```bash
 cargo-bill bill lambda
 ```
 
-### 4. Advanced FinOps Evaluation (Graviton)
-Evaluate structural cost savings utilizing Amazon's proprietary ARM64 architecture in Frankfurt:
+Run with explicit parameters:
+
 ```bash
-cargo-bill bill lambda --architecture arm64 --region eu-central-1 --memory 128 --executions 1000000
+cargo bill lambda \
+  --region ap-southeast-2 \
+  --architecture arm64 \
+  --memory 512 \
+  --executions 1000000 \
+  --include-free-tier
 ```
 
-**Example Output:**
+JSON output mode:
+
+```bash
+cargo bill lambda --json
+```
+
+## CLI options
+
 ```text
-Initializing cargo-bill for AWS Lambda cost estimation...
-Region: eu-central-1, Memory: 128 MB, Executions: 1000000, Architecture: arm64
-Executing `cargo build --release`...
+--region <REGION>                     AWS region (default: us-east-1)
+--memory <MEMORY_MB>                  Lambda memory in MB (default: 128)
+--executions <COUNT>                  Number of invocations (default: 1,000,000)
+--architecture <x86_64|arm64>         Lambda architecture (default: x86_64)
+--include-free-tier                   Apply monthly free tier deductions
+--provisioned-concurrency             Assume warm start (cold start = 0)
+--json                                Print machine-readable JSON
+```
 
-Warning: Your binary is unusually large (15.52 MB).
-You are compiling aws-sdk crates (e.g., aws-sdk-s3 or aws-sdk-pricing) potentially with all features enabled.
-Consider using default-features = false to reduce Cold Start time.
+## Cost model
 
+Estimated execution cost is:
+
+`total_cost = compute_cost + request_cost`
+
+Where:
+
+- `compute_cost = billable_gb_seconds * region_arch_price`
+- `request_cost = (billable_requests / 1_000_000) * 0.20`
+
+If `--include-free-tier` is enabled:
+
+- `billable_gb_seconds = max(total_gb_seconds - 400000, 0)`
+- `billable_requests = max(executions - 1000000, 0)`
+
+## Accuracy notes
+
+- Dynamic pricing uses AWS Pricing API location names mapped from AWS region codes.
+- If pricing API access fails, `cargo-bill` falls back to static Lambda rates.
+- On non-Linux hosts (macOS/Windows), compiled binary size may differ slightly from Amazon Linux ELF builds.
+  For stricter production parity, use `cargo-lambda` or `cross` for cross-compilation.
+
+## Example output
+
+```text
 AWS Lambda Cost Estimation Report:
-+-------------------------------------------------+
-| Metric                               Value      |
-+=================================================+
-| Binary Size (MB)                     15.52      |
-| Architecture                         arm64      |
-| Stripped                             No         |
-| Has Debug Symbols                    No         |
-| Estimated Monthly Storage Cost       $0.0015    |
-| Estimated Cost per 1000000 Requests  $2.9433    |
-| Predicted Cold Start Latency         1862.18 ms |
-| Dynamic API Pricing Used             Yes        |
-+-------------------------------------------------+
++-----------------------------------------------+
+| Metric                              Value      |
++===============================================+
+| Binary Size (MB)                    15.52      |
+| Architecture                        arm64      |
+| Estimated Monthly Storage Cost      $0.0015    |
+| Estimated Cost per 1000000 Requests $2.9433    |
+| Predicted Cold Start Latency        1862.18 ms |
+| Dynamic API Pricing Used            Yes        |
++-----------------------------------------------+
 ```
 
----
+## CI and releases
 
-## 🧠 Why This Matters: The Cold Start Algorithm 
+- CI: lint + tests on push and pull request.
+- Automated release PRs: `release-plz` workflow.
+- Publishing: crates.io + GitHub release artifacts.
 
-When presenting this metric logic to Tech Leads and DevOps Engineers, the "Predicted Cold Start Latency" equation in `cargo-bill` is NOT a simple random guess; it mathematically emulates AWS **Firecracker microVM initialization restrictions.**
+## License
 
-### The Virtualization Reality
-AWS Lambda allocates CPU power and Network bandwidth strictly proportionally to the **Memory** you configure:
-- A `1024 MB` Lambda function is the AWS baseline metric (`Factor = 1.0x`)
-- A `128 MB` Lambda is restricted and initializes roughly **8x slower**.
-
-```rust
-// The core heuristic formula
-let memory_factor = 1024.0 / (memory_mb as f64); 
-let cold_start_ms = (size_mb * 15.0) * memory_factor;
-```
-
-A monolithic 30MB payload crammed into a cheap 128MB Lambda limits the CPU stream and balloons initialization times into multiple seconds. 
-`cargo-bill` dynamically reads your **Dependency Weight** alongside your Cargo Target, predicting this latency lag explicitly so your DevOps team can negotiate optimization triggers before hitting production limits.
-
----
-
-## 🛠️ Troubleshooting
-
-**"Does this tool fail if I don't have AWS Credentials configured?"**
-
-No! `cargo-bill` is built with a resilient fallback mechanism. If the AWS Pricing SDK fails to locate valid credentials (e.g. `~/.aws/credentials` or standard Environment Variables like `AWS_ACCESS_KEY_ID`), or if the AWS pricing API times out, it will automatically degrade gracefully:
-
-- It bypasses the dynamic API fetch pipeline.
-- It immediately drops into **Static Pricing Fallback Mode** estimating compute costs using hardcoded base rates for common compute tiers (`$0.0000166667` for x86 / `$0.0000133334` for Graviton).
-- The generated table report will clearly display: `Dynamic API Pricing Used: No (Fallback)` so you always know the source of truth of your estimate.
+MIT
