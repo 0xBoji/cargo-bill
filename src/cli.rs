@@ -52,6 +52,10 @@ pub struct LambdaArgs {
     /// Assume Provisioned Concurrency (Eliminates Cold Starts)
     #[arg(long)]
     pub provisioned_concurrency: bool,
+
+    /// Output results in Markdown table format
+    #[arg(long)]
+    pub markdown: bool,
 }
 
 pub fn parse_args() -> BillArgs {

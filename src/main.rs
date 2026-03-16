@@ -1,10 +1,12 @@
 mod analysis_engine;
 mod builder;
 mod cli;
+mod optimization;
 mod pricing_provider;
 
 use anyhow::Result;
 use cli::{parse_args, BillSubcommands};
+use colored::*;
 use prettytable::{format, row, Table};
 use serde_json::json;
 use tracing::{info, warn};
@@ -73,6 +75,34 @@ async fn main() -> Result<()> {
                 }
             }
 
+
+            if !lambda_args.json {
+                let optimization_tips = optimization::check_optimizations(&metadata);
+                if !optimization_tips.is_empty() {
+                    if lambda_args.markdown {
+                        println!("\n### 💡 Optimization Recommendations");
+                        println!("| Category | Recommendation | Fix | Impact |");
+                        println!("|----------|----------------|-----|--------|");
+                        for tip in &optimization_tips {
+                            println!(
+                                "| {} | {} | `{}` | {} |",
+                                tip.category,
+                                tip.message,
+                                tip.fix_suggestion.replace("\n", " "),
+                                tip.impact
+                            );
+                        }
+                    } else {
+                        println!("\n{}", "💡 Optimization Recommendations:".bold().yellow());
+                        for tip in &optimization_tips {
+                            println!("{} {}", "•".yellow(), tip.message.bold());
+                            println!("  {} {}", "Fix:".cyan(), tip.fix_suggestion.dimmed());
+                            println!("  {} {}", "Impact:".italic(), tip.impact);
+                        }
+                    }
+                }
+            }
+
             if lambda_args.json {
                 let output = json!({
                     "metadata": {
@@ -86,49 +116,83 @@ async fn main() -> Result<()> {
                         "include_free_tier": lambda_args.include_free_tier,
                         "provisioned_concurrency": lambda_args.provisioned_concurrency
                     },
-                    "estimation": costs
+                    "estimation": costs,
+                    "optimizations": optimization::check_optimizations(&metadata)
                 });
                 println!("{}", serde_json::to_string_pretty(&output)?);
                 return Ok(());
             }
 
-            let mut table = Table::new();
-            table.set_format(*format::consts::FORMAT_BORDERS_ONLY);
-            table.set_titles(row!["Metric", "Value"]);
-            table.add_row(row!["Binary Size (MB)", format!("{:.2}", analysis.size_mb)]);
-            table.add_row(row!["Architecture", lambda_args.architecture]);
-            table.add_row(row!["Stripped", stripped_str]);
-            table.add_row(row![
-                "Has Debug Symbols",
-                if analysis.has_debug_symbols {
-                    "Yes"
-                } else {
-                    "No"
-                }
-            ]);
-            table.add_row(row![
-                "Estimated Monthly Storage Cost",
-                format!("${:.4}", costs.storage_cost_monthly)
-            ]);
-            table.add_row(row![
-                format!("Estimated Cost per {} Requests", lambda_args.executions),
-                format!("${:.4}", costs.compute_cost_1m)
-            ]);
-            table.add_row(row![
-                "Predicted Cold Start Latency",
-                format!("{:.2} ms", costs.predicted_cold_start_ms)
-            ]);
-            table.add_row(row![
-                "Dynamic API Pricing Used",
-                if costs.dynamic_pricing_used {
-                    "Yes"
-                } else {
-                    "No (Fallback)"
-                }
-            ]);
+            if lambda_args.markdown {
+                println!("\n### 📊 AWS Lambda Cost Estimation Report");
+                println!("| Metric | Value |");
+                println!("|--------|-------|");
+                println!("| Binary Size (MB) | {:.2} |", analysis.size_mb);
+                println!("| Architecture | {} |", lambda_args.architecture);
+                println!("| Stripped | {} |", stripped_str);
+                println!(
+                    "| Has Debug Symbols | {} |",
+                    if analysis.has_debug_symbols { "Yes" } else { "No" }
+                );
+                println!(
+                    "| Estimated Monthly Storage Cost | ${:.4} |",
+                    costs.storage_cost_monthly
+                );
+                println!(
+                    "| Estimated Cost per {} Requests | ${:.4} |",
+                    lambda_args.executions, costs.compute_cost_1m
+                );
+                println!(
+                    "| Predicted Cold Start Latency | {:.2} ms |",
+                    costs.predicted_cold_start_ms
+                );
+                println!(
+                    "| Dynamic API Pricing Used | {} |",
+                    if costs.dynamic_pricing_used {
+                        "Yes"
+                    } else {
+                        "No (Fallback)"
+                    }
+                );
+            } else {
+                let mut table = Table::new();
+                table.set_format(*format::consts::FORMAT_BORDERS_ONLY);
+                table.set_titles(row!["Metric", "Value"]);
+                table.add_row(row!["Binary Size (MB)", format!("{:.2}", analysis.size_mb)]);
+                table.add_row(row!["Architecture", lambda_args.architecture]);
+                table.add_row(row!["Stripped", stripped_str]);
+                table.add_row(row![
+                    "Has Debug Symbols",
+                    if analysis.has_debug_symbols {
+                        "Yes"
+                    } else {
+                        "No"
+                    }
+                ]);
+                table.add_row(row![
+                    "Estimated Monthly Storage Cost",
+                    format!("${:.4}", costs.storage_cost_monthly)
+                ]);
+                table.add_row(row![
+                    format!("Estimated Cost per {} Requests", lambda_args.executions),
+                    format!("${:.4}", costs.compute_cost_1m)
+                ]);
+                table.add_row(row![
+                    "Predicted Cold Start Latency",
+                    format!("{:.2} ms", costs.predicted_cold_start_ms)
+                ]);
+                table.add_row(row![
+                    "Dynamic API Pricing Used",
+                    if costs.dynamic_pricing_used {
+                        "Yes"
+                    } else {
+                        "No (Fallback)"
+                    }
+                ]);
 
-            info!("\nAWS Lambda Cost Estimation Report:");
-            table.printstd();
+                info!("\nAWS Lambda Cost Estimation Report:");
+                table.printstd();
+            }
         }
     }
 
