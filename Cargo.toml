@@ -1,6 +1,6 @@
 [package]
 name = "cargo-bill"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 authors = ["0xboji"]
 description = "A Rust CLI tool that estimates AWS Lambda costs based on the compiled binary size."
