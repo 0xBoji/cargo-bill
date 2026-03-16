@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6](https://github.com/0xBoji/cargo-bill/compare/v0.1.5...v0.1.6) - 2026-03-16
+
+### Added
+
+- add optimization engine and markdown output format
+
 ## [0.1.5](https://github.com/0xBoji/cargo-bill/compare/v0.1.4...v0.1.5) - 2026-03-10
 
 ### Other
